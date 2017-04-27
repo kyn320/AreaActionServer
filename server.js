@@ -7,6 +7,7 @@ var room = {
 	id: 0
 	, name: "Test"
 	, userList: []
+	, isPlayed : false
 }
 
 var roomList = new Array();
@@ -69,7 +70,18 @@ io.on('connection', function (socket) {
 				}
 
 				socket.emit('userList', userObj);
+				
+				console.log('[asd] : '+findRoom.userList.length);
+				
+				if(findRoom.userList.length == 2){
+					findRoom.isPlayed = true;
+					EmitForRoomAllUsers(findRoom, 'start',{data:"0"});
+				}
+				
 			}
+			
+			
+			
 		}
 	});
 
@@ -180,3 +192,5 @@ function EmitForRoomAllUsers(room, eventName, obj) {
 		}
 	}
 }
+
+
