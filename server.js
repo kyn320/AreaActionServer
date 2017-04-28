@@ -6,8 +6,9 @@ var io = require('socket.io')({
 var room = {
 	id: 0
 	, name: "Test"
+	, fullPlayers: 0
 	, userList: []
-	, isPlayed : false
+	, isPlayed: false
 }
 
 var roomList = new Array();
@@ -26,68 +27,56 @@ io.on('connection', function (socket) {
 	UserConnect();
 
 	socket.on('login', function (data) {
-		socket.id = data.nick;
-		console.log('[Login]' + new Date() + '\n' + socket.id + ' | ' + data.nick);
+		socket.id = data.name;
+		console.log('[Login]' + new Date() + '\n' + socket.id + ' | ' + data.name);
+		//socket.emit('roomList', roomList);
+	});
+
+	socket.on('roomList', function (data) {
+		socket.emit('roomList', roomList);
 	});
 
 	//방 입장 시
 	socket.on('join', function (data) {
-		socket.leave();
 
 		var findRoom = FindRoom(data.roomName);
-
 		if (findRoom == null) {
 			socket.emit('error', {
 				errorCode: 1
 			});
 			console.log("error!!");
 		} else {
+			if (!(findRoom.isPlayed)) {
+				socket.leave();
 
-			socket.join(data.roomName);
-			socket.room = data.roomName;
-
-			JoinRoom(findRoom, socket);
-
-			console.log('[Room]' + data.roomName);
-
-			var obj = {
-				nick: socket.id
-				, character: data.character
+				socket.join(data.roomName);
+				socket.room = data.roomName;
+				JoinRoom(findRoom, socket);
+				console.log('[Room]' + data.roomName);
+				var obj = {
+					name: socket.id
+					, character: data.character
+				}
+				EmitForRoomUsersWithoutMy(findRoom, 'join', obj, socket);
+				if (findRoom.userList != null) {
+					socket.emit('userList', RoomUserList(findRoom));
+					console.log('[asd] : ' + findRoom.userList.length);
+					if (findRoom.userList.length == 2) {
+						findRoom.isPlayed = true;
+						EmitForRoomAllUsers(findRoom, 'start', {
+							data: "0"
+						});
+					}
+				}
+			} else {
+				console.log('[JoinFail]' + findRoom.name + ' is Playing!');
 			}
-
-			EmitForRoomUsersWithoutMy(findRoom, 'join', obj, socket);
-
-			if (findRoom.userList != null) {
-
-				var users = new Array();
-
-				for (var i = 0; i < findRoom.userList.length; i++) {
-					users.push(findRoom.userList[i].id);
-				}
-
-				var userObj = {
-					userList: users
-				}
-
-				socket.emit('userList', userObj);
-				
-				console.log('[asd] : '+findRoom.userList.length);
-				
-				if(findRoom.userList.length == 2){
-					findRoom.isPlayed = true;
-					EmitForRoomAllUsers(findRoom, 'start',{data:"0"});
-				}
-				
-			}
-			
-			
-			
 		}
 	});
 
 	//채팅 입력 시 
 	socket.on('chat', function (data) {
-		console.log('[Chat] ' + new Date() + ' : ' + data.nick + ' >> ' + data.message);
+		console.log('[Chat] ' + new Date() + ' : ' + data.name + ' >> ' + data.message);
 
 		var findRoom = FindRoom(socket.room);
 
@@ -96,7 +85,7 @@ io.on('connection', function (socket) {
 
 	//점수 획득 시
 	socket.on('score', function (data) {
-		console.log('[Score] : ' + data.nick + ' >> ' + data.score + ' >> ' + socket.room);
+		console.log('[Score] : ' + data.name + ' >> ' + data.score + ' >> ' + socket.room);
 		var findRoom = FindRoom(socket.room);
 
 		EmitForRoomAllUsers(findRoom, 'score', data);
@@ -104,10 +93,10 @@ io.on('connection', function (socket) {
 
 	//공격 시
 	socket.on('attack', function (data) {
-		console.log('[Attack] : ' + data.nick + ' >> ' + data.damage + '>>' + data.other);
+		console.log('[Attack] : ' + data.name + ' >> ' + data.damage + '>>' + data.other);
 
 		var obj = {
-			nick: data.nick
+			name: data.name
 			, damage: data.damage
 		}
 
@@ -120,15 +109,41 @@ io.on('connection', function (socket) {
 
 	//연결 헤제 시
 	socket.on('disconnect', function (data) {
+		console.log(socket.id +'가 연결이 끊겨써요.');
+		
 		var findRoom = FindRoom(socket.room);
+
 		if (findRoom != null) {
+			console.log('room is not null')
+
 			for (var i = 0; i < findRoom.userList.length; i++) {
 				if (socket == findRoom.userList[i]) {
 					findRoom.userList.splice(i, 1);
 					break;
 				}
 			}
+
+			console.log(findRoom.userList.length);
+			
+			if (findRoom.userList.length > 0) {
+
+				EmitForRoomAllUsers(findRoom, 'chat', {
+					name: 'Notice'
+					, message: socket.id + '님이  나갔어요.'
+				});
+				EmitForRoomAllUsers(findRoom, 'userList', RoomUserList(findRoom));
+			} else {
+				console.log(findRoom.name + '의 방은 비어있어요.')
+				for (var i = 0; i < roomList.length; i++) {
+					if (socket.room == roomList[i].name) {
+						roomList.splice(i,1);
+						break;
+					}
+				}
+			}
 			socket.leave(socket.room);
+		} else {
+			console.log('null');
 		}
 		//유저 접속 카운트 갱신 --
 		UserDisconnect();
@@ -176,6 +191,23 @@ function JoinRoom(room, user) {
 	console.log('[Room-UserList] : ' + room.userList);
 }
 
+function RoomUserList(room) {
+	if (room.userList != null) {
+		var users = new Array();
+
+		for (var i = 0; i < room.userList.length; i++) {
+			users.push(room.userList[i].id);
+		}
+
+		var userObj = {
+			userList: users
+		}
+
+		return userObj;
+	}
+	return null;
+}
+
 function EmitForRoomUsersWithoutMy(room, eventName, obj, socket) {
 	if (room.userList != null) {
 		for (var i = 0; i < room.userList.length; i++) {
@@ -192,5 +224,3 @@ function EmitForRoomAllUsers(room, eventName, obj) {
 		}
 	}
 }
-
-
