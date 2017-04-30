@@ -6,6 +6,7 @@ var io = require('socket.io')({
 var room = {
 	id: 0
 	, name: "Test"
+	, readyPlayers: 0
 	, fullPlayers: 0
 	, userList: []
 	, isPlayed: false
@@ -26,69 +27,191 @@ io.on('connection', function (socket) {
 	//유저 접속 카운트 갱신 ++
 	UserConnect();
 
+	//로그인
 	socket.on('login', function (data) {
-		socket.id = data.name;
 		console.log('[Login]' + new Date() + '\n' + socket.id + ' | ' + data.name);
-		//socket.emit('roomList', roomList);
+		//유저의 socket id를 갱신
+		socket.emit('login', {
+			socketID: socket.id
+		});
 	});
 
+
+	//방 리스트
 	socket.on('roomList', function (data) {
-		socket.emit('roomList', roomList);
+		//방 배열을 전송
+		socket.emit('roomList', {
+			roomLists: roomList
+		});
+
+		//완료 패킷을 전송
+		socket.emit('roomFinish', {
+			a: 1
+		});
+
 	});
 
-	//방 입장 시
-	socket.on('join', function (data) {
+	//방 생성
+	socket.on('make', function (data) {
+		//방 모델 생성
+		var makeRoom = {
+			id: roomList.length + 1
+			, name: data.roomName
+			, readyPlayers : 0
+			, fullPlayers: data.fullPlayers
+			, userList: []
+			, isPlayed: false
+		};
 
+		//배열에 추가
+		roomList.push(makeRoom);
+
+		//방 배열을 전송
+		io.sockets.emit('roomList', {
+			roomLists: roomList
+		});
+
+		//완료 패킷을 전송
+		io.sockets.emit('roomFinish', {
+			a: 1
+		});
+
+		socket.leave();
+		//room 입장
+		socket.join(makeRoom.id + makeRoom.name);
+		//socket의 room 지정
+		socket.room = makeRoom.id + makeRoom.name;
+
+		//클라이언트 완료 보내기
+		socket.emit('enterRoom', {
+			roomName: makeRoom.id + makeRoom.name
+		});
+
+	});
+
+	//방 입장
+	socket.on('join', function (data) {
+		//방을 검색
 		var findRoom = FindRoom(data.roomName);
+
+		//방이 없는 경우
 		if (findRoom == null) {
 			socket.emit('error', {
 				errorCode: 1
 			});
 			console.log("error!!");
 		} else {
+			//방이 플레이 중이지 않은 경우
 			if (!(findRoom.isPlayed)) {
+				//room 나가기
 				socket.leave();
-
+				//room 입장
 				socket.join(data.roomName);
+				//socket의 room 지정
 				socket.room = data.roomName;
-				JoinRoom(findRoom, socket);
+
+				//디버그용
+				io.sockets.in(socket.room).emit('test', {
+					test: 'bye'
+				});
+
+				//클라이언트 완료 보내기
+				socket.emit('enterRoom', {
+					roomName: data.roomName
+				});
+
 				console.log('[Room]' + data.roomName);
-				var obj = {
-					name: socket.id
-					, character: data.character
-				}
-				EmitForRoomUsersWithoutMy(findRoom, 'join', obj, socket);
-				if (findRoom.userList != null) {
-					socket.emit('userList', RoomUserList(findRoom));
-					console.log('[asd] : ' + findRoom.userList.length);
-					if (findRoom.userList.length == 2) {
-						findRoom.isPlayed = true;
-						EmitForRoomAllUsers(findRoom, 'start', {
-							data: "0"
-						});
-					}
-				}
+
 			} else {
+				//플레이 중인 경우
 				console.log('[JoinFail]' + findRoom.name + ' is Playing!');
 			}
 		}
+	});
+
+	//클라이언트의 준비 완료
+	socket.on('ready', function (data) {
+		//방을 검색
+		var findRoom = FindRoom(socket.room);
+
+		//방이 없는 경우
+		if (findRoom == null) {
+			console.log("ready error!!");
+		} else {
+			//방이 있는 경우
+			console.log("not error ready");
+
+			//유저 모델 생성
+			var user = {
+				socketID: socket
+				, name: data.name
+				, character: data.character
+			}
+
+			//유저 추가
+			findRoom.userList.push(user);
+
+
+			//다른 클라이언트에게 소켓 아이디를 보냄
+			user.socketID = socket.id;
+
+			//추가된 유저를 보냄
+			socket.broadcast.to(socket.room).emit('join', user);
+
+			//준비된 유저 카운트 추가
+			
+
+			//유저 배열
+			//var userArray = new Array();
+
+			console.log(findRoom.userList);
+
+			/*
+			for (var i = 0; i < findRoom.userList.length; i++) {
+				userArray.push({
+					socketID: findRoom.userList[i].socketID
+					, name: findRoom.userList[i].name
+					, character: findRoom.userList[i].character
+				});
+			}
+*/
+			//
+			if (findRoom.userList != null) {
+				//현재 접속 유저에게 다른 유저들을 보냄
+				socket.emit('userList', {
+					userList: findRoom.userList
+				});
+
+				findRoom.readyPlayers++;
+				console.log('[asd] : ' + findRoom.userList.length + ' | ' + findRoom.readyPlayers + ' / ' + findRoom.fullPlayers);
+
+				//방에 플레이 가능한 인원인 경우
+				if (findRoom.readyPlayers == findRoom.fullPlayers) {
+					console.log("play");
+					findRoom.isPlayed = true;
+					//방의 모든 유저 게임 시작.
+					io.sockets.in(socket.room).emit('start', {
+						a: 0
+					});
+				}
+				else
+				 console.log("not play");
+			}
+		}
+
 	});
 
 	//채팅 입력 시 
 	socket.on('chat', function (data) {
 		console.log('[Chat] ' + new Date() + ' : ' + data.name + ' >> ' + data.message);
 
-		var findRoom = FindRoom(socket.room);
-
-		EmitForRoomAllUsers(findRoom, 'chat', data);
+		io.sockets.in(socket.room).emit('chat', data);
 	});
 
 	//점수 획득 시
 	socket.on('score', function (data) {
 		console.log('[Score] : ' + data.name + ' >> ' + data.score + ' >> ' + socket.room);
-		var findRoom = FindRoom(socket.room);
-
-		EmitForRoomAllUsers(findRoom, 'score', data);
+		io.sockets.in(socket.room).emit('score', data);
 	});
 
 	//공격 시
@@ -100,43 +223,61 @@ io.on('connection', function (socket) {
 			, damage: data.damage
 		}
 
-		var findRoom = FindRoom(socket.room);
-		var other = FindRoomInUser(findRoom, data.other);
+		io.sockets(data.other).emit('attack', obj);
 
-		other.emit('attack', obj);
 	});
 
 
 	//연결 헤제 시
 	socket.on('disconnect', function (data) {
-		console.log(socket.id +'가 연결이 끊겨써요.');
-		
+		console.log(socket.id + '가 연결이 끊겨써요.');
+
 		var findRoom = FindRoom(socket.room);
 
+		var name = "";
+		
 		if (findRoom != null) {
 			console.log('room is not null')
 
 			for (var i = 0; i < findRoom.userList.length; i++) {
-				if (socket == findRoom.userList[i]) {
+				if (socket.id == findRoom.userList[i].socketID) {
+					name = findRoom.userList[i].name;
 					findRoom.userList.splice(i, 1);
 					break;
 				}
 			}
 
 			console.log(findRoom.userList.length);
-			
+
 			if (findRoom.userList.length > 0) {
 
-				EmitForRoomAllUsers(findRoom, 'chat', {
+				io.sockets.in(socket.room).emit('chat', {
 					name: 'Notice'
-					, message: socket.id + '님이  나갔어요.'
+					, message: name + '님이  나갔어요.'
 				});
-				EmitForRoomAllUsers(findRoom, 'userList', RoomUserList(findRoom));
+
+				io.sockets.in(socket.room).emit('chat', {
+					name: 'Notice'
+					, message: name + '님이  나갔어요.'
+				});
+
+				//유저 리스트 
+				//유저 배열
+				var userArray = new Array();
+
+				console.log(findRoom.userList);
+				
+				io.sockets.in(socket.room).emit('userList', {
+					userList: findRoom.userList
+				});
+
+
+
 			} else {
 				console.log(findRoom.name + '의 방은 비어있어요.')
 				for (var i = 0; i < roomList.length; i++) {
-					if (socket.room == roomList[i].name) {
-						roomList.splice(i,1);
+					if (socket.room == roomList[i].id+roomList[i].name) {
+						roomList.splice(i, 1);
 						break;
 					}
 				}
@@ -179,48 +320,9 @@ function FindRoom(name) {
 function FindRoomInUser(room, user) {
 	if (room.userList != null) {
 		for (var i = 0; i < room.userList.length; i++) {
-			if (room.userList[i].id == user)
-				return room.userList[i];
+			if (room.userList[i].socketID == user)
+				return room.userList[i].socketID;
 		}
 	}
 	return null;
-}
-
-function JoinRoom(room, user) {
-	room.userList.push(user);
-	console.log('[Room-UserList] : ' + room.userList);
-}
-
-function RoomUserList(room) {
-	if (room.userList != null) {
-		var users = new Array();
-
-		for (var i = 0; i < room.userList.length; i++) {
-			users.push(room.userList[i].id);
-		}
-
-		var userObj = {
-			userList: users
-		}
-
-		return userObj;
-	}
-	return null;
-}
-
-function EmitForRoomUsersWithoutMy(room, eventName, obj, socket) {
-	if (room.userList != null) {
-		for (var i = 0; i < room.userList.length; i++) {
-			if (room.userList[i] != socket)
-				room.userList[i].emit(eventName, obj);
-		}
-	}
-}
-
-function EmitForRoomAllUsers(room, eventName, obj) {
-	if (room.userList != null) {
-		for (var i = 0; i < room.userList.length; i++) {
-			room.userList[i].emit(eventName, obj);
-		}
-	}
 }
