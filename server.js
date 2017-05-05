@@ -33,13 +33,18 @@ io.on('connection', function (socket) {
 	//로그인
 	socket.on('login', function (data) {
 		console.log('[Login]' + new Date() + '\n\t' + socket.id + ' | ' + data.name);
-		socket.leave();
+		socket.leave(socket.room);
 		socket.join('lobby');
 		socket.room = 'lobby';
 
 		//유저의 socket id를 갱신
 		socket.emit('login', {
 			socketID: socket.id
+		});
+
+		io.sockets.in(socket.room).emit('chat', {
+			name: "[Join]"
+			, message: data.name + "님이 접속 하셨습니다."
 		});
 	});
 
@@ -74,7 +79,7 @@ io.on('connection', function (socket) {
 		//배열에 추가
 		roomList.push(makeRoom);
 
-		socket.leave();
+		socket.leave(socket.room);
 		//room 입장
 		socket.join(makeRoom.id + makeRoom.name);
 		//socket의 room 지정
@@ -104,7 +109,7 @@ io.on('connection', function (socket) {
 			//방이 플레이 중이지 않은 경우
 			if (!(findRoom.isPlayed)) {
 				//room 나가기
-				socket.leave();
+				socket.leave(socket.room);
 				//room 입장
 				socket.join(data.roomName);
 				//socket의 room 지정
@@ -203,16 +208,22 @@ io.on('connection', function (socket) {
 	socket.on('attack', function (data) {
 		console.log('[Attack] : ' + data.name + ' >> ' + data.damage + '>>' + data.other);
 
-		var obj = {
-			name: data.name
-			, damage: data.damage
-		}
-
-		io.sockets(data.other).emit('attack', obj);
+		io.sockets.in(socket.room).emit('attack', data);
 
 	});
 
+	//체력 회복 및 데미지 공유
+	socket.on('hpchange', function (data) {
+		io.sockets.in(socket.room).emit('hpchange', data);
+	});
 
+	//사망 공유
+	socket.on('death', function (data) {
+		io.sockets.in(socket.room).emit('death', data);
+	});
+
+	
+	//게임방 아웃
 	socket.on('out', function (data) {
 
 		var findRoom = FindRoom(socket.room);
@@ -223,7 +234,7 @@ io.on('connection', function (socket) {
 			for (var i = 0; i < findRoom.userList.length; i++) {
 				if (socket.id == findRoom.userList[i].socketID) {
 					name = findRoom.userList[i].name;
-					console.log("[RoomInfo-Out] " + new Date() + '\n\tNo. ' +  findRoom.id + ' | ' + findRoom.name + ' >> ' + name);
+					console.log("[RoomInfo-Out] " + new Date() + '\n\tNo. ' + findRoom.id + ' | ' + findRoom.name + ' >> ' + name);
 					findRoom.userList.splice(i, 1);
 					findRoom.readyPlayers--;
 					break;
@@ -284,7 +295,7 @@ io.on('connection', function (socket) {
 			for (var i = 0; i < findRoom.userList.length; i++) {
 				if (socket.id == findRoom.userList[i].socketID) {
 					name = findRoom.userList[i].name;
-					console.log("[RoomInfo-Out] " + new Date() + '\n\tNo. ' +  findRoom.id + ' | ' + findRoom.name + ' >> ' + name);
+					console.log("[RoomInfo-Out] " + new Date() + '\n\tNo. ' + findRoom.id + ' | ' + findRoom.name + ' >> ' + name);
 					findRoom.userList.splice(i, 1);
 					findRoom.readyPlayers--;
 					break;
