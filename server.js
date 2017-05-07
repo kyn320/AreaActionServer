@@ -3,18 +3,7 @@ var io = require('socket.io')({
 	transports: ['websocket']
 , });
 
-var room = {
-	id: 1
-	, name: "Test"
-	, readyPlayers: 0
-	, fullPlayers: 2
-	, userList: []
-	, isPlayed: false
-}
-
 var roomList = new Array();
-
-roomList[0] = room;
 
 var USER_COUNT = 0;
 
@@ -68,7 +57,7 @@ io.on('connection', function (socket) {
 	socket.on('make', function (data) {
 		//방 모델 생성
 		var makeRoom = {
-			id: roomList.length + 1
+			id: GenerateRandomID(1, 10000)
 			, name: data.roomName
 			, readyPlayers: 0
 			, fullPlayers: data.fullPlayers
@@ -222,7 +211,7 @@ io.on('connection', function (socket) {
 		io.sockets.in(socket.room).emit('death', data);
 	});
 
-	
+
 	//게임방 아웃
 	socket.on('out', function (data) {
 
@@ -250,6 +239,10 @@ io.on('connection', function (socket) {
 
 				io.sockets.in(socket.room).emit('userList', {
 					userList: findRoom.userList
+				});
+
+				io.sockets.in(socket.room).emit('userOut', {
+					a: 1
 				});
 
 			} else {
@@ -313,6 +306,10 @@ io.on('connection', function (socket) {
 					userList: findRoom.userList
 				});
 
+				io.sockets.in(socket.room).emit('userOut', {
+					a: 1
+				});
+
 			} else {
 				for (var i = 0; i < roomList.length; i++) {
 					if (socket.room == roomList[i].id + roomList[i].name) {
@@ -343,6 +340,23 @@ io.on('connection', function (socket) {
 	});
 
 });
+
+
+function GenerateRandomID(min, max) {
+	var ranNum = 0;
+	do {
+		ranNum = Math.floor(Math.random() * (max - min + 1)) + min;
+	} while (CheckID(ranNum));
+	return ranNum;
+}
+
+function CheckID(id) {
+	for (var i = 0; i < roomList.length; i++) {
+		if (id == roomList[i].id)
+			return true;
+	}
+	return false;
+}
 
 
 function UserConnect() {
